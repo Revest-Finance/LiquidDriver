@@ -153,13 +153,18 @@ interface IRevest {
         uint quantity
     ) external returns (uint);
 
+    function extendFNFTMaturity(
+        uint fnftId,
+        uint endTime
+    ) external returns (uint);
+
     function setFlatWeiFee(uint wethFee) external;
 
     function setERC20Fee(uint erc20) external;
 
-    function getFlatWeiFee() external returns (uint);
+    function getFlatWeiFee() external view returns (uint);
 
-    function getERC20Fee() external returns (uint);
+    function getERC20Fee() external view returns (uint);
 
 
 }

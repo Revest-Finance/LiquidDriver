@@ -33,7 +33,4 @@ interface IOutputReceiverV2 is IOutputReceiver {
     // This function should only ever be called when a split or additional deposit has occurred 
     function handleFNFTRemaps(uint fnftId, uint[] memory newFNFTIds, address caller, bool cleanup) external;
 
-    // This function provides more info about the additional deposit made
-    function handleAdditionalDeposit(uint fnftId, uint amountToDeposit, address depositCaller) external;
-
 }
