@@ -89,7 +89,7 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
             smartWallAdd = address(wallet);
 
             // We use our admin powers on SmartWalletWhitelistV2 to approve the newly created smart wallet
-            SmartWalletWhitelistV2(IVotingEscrow(smartWallAdd).smart_wallet_checker()).approveWallet(smartWallAdd);
+            SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).approveWallet(smartWallAdd);
             
             // Here, check if the smart wallet has approval to spend tokens out of this entry point contract
             if(!approvedContracts[smartWallAdd][TOKEN]) {
@@ -155,8 +155,10 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         IERC20(TOKEN).safeTransfer(owner, balance);
 
         // Clean up memory
+        SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).revokeWallet(smartWallets[fnftId]);
         wallet.cleanMemory();
         delete smartWallets[fnftId];
+
     }
 
     // Not applicable, as these cannot be split
@@ -183,9 +185,20 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         // Lots to be done here
         IAddressRegistry reg = IAddressRegistry(addressRegistry);
         require(IFNFTHandler(reg.getRevestFNFT()).getBalance(_msgSender(), fnftId) > 0, 'E064');
+
+        (uint methodForUpdate, uint value, uint unlockTime) = abi.decode(args, (uint, uint, uint));
+        if(methodForUpdate == 0) {
+            _depositAdditionalFunds(fnftId, value);
+        } else if(methodForUpdate == 1) {
+            _extendLockupPeriod(fnftId, unlockTime);
+        } else if(methodForUpdate == 2) {
+            _claimRewards(fnftId);
+        }
     }
 
+    // Will need a way to communicate necessity of setApprovalFor
     function _depositAdditionalFunds(uint fnftId, uint value) internal {
+        IERC20(TOKEN).safeTransferFrom(msg.sender, address(this), value);
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallets[fnftId]);
         wallet.increaseAmount(value, VOTING_ESCROW);
     }
@@ -195,6 +208,10 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         getRevest().extendFNFTMaturity(fnftId, unlockTime);
         wallet.increaseUnlockTime(unlockTime, VOTING_ESCROW);
     }        
+
+    function _claimRewards(uint fnftId) internal {
+        // TODO: IMPLEMENT
+    }
 
     function setAddressRegistry(address addressRegistry_) external override onlyOwner {
         addressRegistry = addressRegistry_;
