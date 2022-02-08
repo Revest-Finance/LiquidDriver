@@ -58,6 +58,7 @@ contract VestedEscrowSmartWallet {
         cleanMemory();
     }
 
+    /// Credit to doublesharp for the brilliant gas-saving concept
     function cleanMemory() internal {
         selfdestruct(payable(MASTER));
     }
