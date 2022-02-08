@@ -229,7 +229,7 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     function _claimRewards(uint fnftId) internal {
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
-        uint[] memory rewards = wallet.claimRewards(DISTRIBUTOR, REWARD_TOKENS);
+        uint[] memory rewards = wallet.claimRewards(DISTRIBUTOR, VOTING_ESCROW, REWARD_TOKENS);
         for(uint i = 0; i < rewards.length; i++) {
             IERC20(REWARD_TOKENS[i]).transfer(msg.sender, rewards[i]);
         }
