@@ -10,6 +10,10 @@ import '@openzeppelin/contracts/utils/introspection/IERC165.sol';
  */
 interface IDistributor {
 
-    function claim(address addr) external returns (uint amountTransferred);
+    function claim() external returns (uint amountTransferred);
+
+    function N_COINS() external returns (uint n);
+
+    function tokens(uint index) external returns (address token);
 
 }

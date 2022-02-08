@@ -9,6 +9,7 @@ import "./interfaces/IRevest.sol";
 import "./interfaces/IFNFTHandler.sol";
 import "./interfaces/ILockManager.sol";
 import "./interfaces/IVotingEscrow.sol";
+import "./interfaces/IDistributor.sol";
 import "./VestedEscrowSmartWallet.sol";
 import "./SmartWalletWhitelistV2.sol";
 
@@ -47,6 +48,11 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     // Token used for voting escrow
     address public immutable TOKEN;
 
+    // Distributor for rewards address
+    address public immutable DISTRIBUTOR;
+
+    address[] private REWARD_TOKENS;
+
     // Template address for VE wallets
     address public immutable TEMPLATE;
 
@@ -60,12 +66,19 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     mapping (address => mapping (address => bool)) private approvedContracts;
 
     // Initialize the contract with the needed valeus
-    constructor(address _provider, address _vE) {
+    constructor(address _provider, address _vE, address _distro) {
         addressRegistry = _provider;
         VOTING_ESCROW = _vE;
         TOKEN = IVotingEscrow(_vE).token();
         VestedEscrowSmartWallet wallet = new VestedEscrowSmartWallet();
         TEMPLATE = address(wallet);
+        DISTRIBUTOR = _distro;
+        // Running loop here means we only have to do it once
+        uint nTokens = IDistributor(_distro).N_COINS();
+        REWARD_TOKENS = new address[](nTokens);
+        for(uint i = 0; i < nTokens; i++) {
+            REWARD_TOKENS[i] = IDistributor(_distro).tokens(i);
+        }
     }
 
     // Allows core Revest contracts to make sure this contract can do what is needed
@@ -212,7 +225,12 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     }        
 
     function _claimRewards(uint fnftId) internal {
-        // TODO: IMPLEMENT
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+        uint[] memory rewards = wallet.claimRewards(DISTRIBUTOR, REWARD_TOKENS);
+        for(uint i = 0; i < rewards.length; i++) {
+            IERC20(REWARD_TOKENS[i]).transfer(msg.sender, rewards[i]);
+        }
     }
 
     function setAddressRegistry(address addressRegistry_) external override onlyOwner {
