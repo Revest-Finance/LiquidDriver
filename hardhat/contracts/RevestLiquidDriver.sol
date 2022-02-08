@@ -31,8 +31,9 @@ interface ITokenVaultTracker {
 }
 
 /**
- * @title
- * @dev could add ability to airdrop ERC1155s to this, make things even more interesting
+ * @title LiquidDriver <> Revest integration for tokenizing xLQDR positions
+*  @author RobAnon
+ * @dev 
  */
 
 contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
@@ -49,9 +50,9 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     address public immutable TOKEN;
 
     // Distributor for rewards address
-    address public immutable DISTRIBUTOR;
+    address public DISTRIBUTOR;
 
-    address[] private REWARD_TOKENS;
+    address[] public REWARD_TOKENS;
 
     // Template address for VE wallets
     address public immutable TEMPLATE;
@@ -106,6 +107,7 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
             fnftConfig.asset = address(0);
 
             // Assign how much of that asset the FNFT will hold
+            // TODO: This is not important, can set to zero just as easily
             fnftConfig.depositAmount = amountToLock;
 
             // TODO: We will need to suppress the default UI for this
@@ -233,13 +235,26 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         }
     }
 
+    /// Admin Functions
+
     function setAddressRegistry(address addressRegistry_) external override onlyOwner {
         addressRegistry = addressRegistry_;
+    }
+
+    function setDistributor(address _distro) external onlyOwner {
+        DISTRIBUTOR = _distro;
+        uint nTokens = IDistributor(_distro).N_COINS();
+        REWARD_TOKENS = new address[](nTokens);
+        for(uint i = 0; i < nTokens; i++) {
+            REWARD_TOKENS[i] = IDistributor(_distro).tokens(i);
+        }
     }
 
     function getCustomMetadata(uint) external pure override returns (string memory) {
         return METADATA;
     }
+
+    /// View Functions
 
     // TODO: Check this more thoroughly
     function getValue(uint fnftId) public view override returns (uint) {

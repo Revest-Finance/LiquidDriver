@@ -26,4 +26,6 @@ interface IVotingEscrow {
 
     function balanceOf(address _addr) external view returns (uint balance);
 
+    function user_point_epoch(address _addr) external view returns (uint epoch);
+
 }

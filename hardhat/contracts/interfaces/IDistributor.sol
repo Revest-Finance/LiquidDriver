@@ -12,8 +12,10 @@ interface IDistributor {
 
     function claim() external returns (uint amountTransferred);
 
-    function N_COINS() external returns (uint n);
+    function N_COINS() external view returns (uint n);
 
-    function tokens(uint index) external returns (address token);
+    function tokens(uint index) external view returns (address token);
+
+    function user_epoch_of(address _addr) external view returns (uint epoch);
 
 }

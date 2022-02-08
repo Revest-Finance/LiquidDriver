@@ -59,9 +59,13 @@ contract VestedEscrowSmartWallet {
         cleanMemory();
     }
 
-    function claimRewards(address distributor, address[] memory tokens) external onlyMaster returns (uint[] memory balances) {
+    function claimRewards(address distributor, address votingEscrow, address[] memory tokens) external onlyMaster returns (uint[] memory balances) {
         balances = new uint[](tokens.length);
-        IDistributor(distributor).claim();
+        bool exitFlag;
+        while(!exitFlag) {
+            IDistributor(distributor).claim();
+            exitFlag = IDistributor(distributor).user_epoch_of(address(this)) + 50 >= IVotingEscrow(votingEscrow).user_point_epoch(address(this));
+        }   
         for(uint i = 0; i < tokens.length; i++) {
             address token = tokens[i];
             uint bal = IERC20(token).balanceOf(address(this));
