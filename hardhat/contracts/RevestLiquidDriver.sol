@@ -18,6 +18,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import '@openzeppelin/contracts/utils/introspection/ERC165.sol';
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
 
 // Uniswap imports
 import "./lib/uniswap/IUniswapV2Factory.sol";
@@ -46,6 +47,9 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     // Token used for voting escrow
     address public immutable TOKEN;
 
+    // Template address for VE wallets
+    address public immutable TEMPLATE;
+
     // The file which tells our frontend how to visually represent such an FNFT
     string public constant METADATA = "https://revest.mypinata.cloud/ipfs/QmQm9nkwvfevS9hwvJxebo2qWji8H6cjbw9ZRKacXMLRGw";
 
@@ -55,14 +59,13 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     // For tracking if a given contract has approval for token
     mapping (address => mapping (address => bool)) private approvedContracts;
 
-    // For mapping FNFTs to SmartWallets
-    mapping (uint => address) public smartWallets;
-
     // Initialize the contract with the needed valeus
     constructor(address _provider, address _vE) {
         addressRegistry = _provider;
         VOTING_ESCROW = _vE;
         TOKEN = IVotingEscrow(_vE).token();
+        VestedEscrowSmartWallet wallet = new VestedEscrowSmartWallet();
+        TEMPLATE = address(wallet);
     }
 
     // Allows core Revest contracts to make sure this contract can do what is needed
@@ -81,26 +84,6 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
 
         // Transfer the tokens from the user to this contract
         IERC20(TOKEN).safeTransferFrom(msg.sender, address(this), amountToLock);
-
-        address smartWallAdd;
-        {
-            // We deploy the smart wallet
-            VestedEscrowSmartWallet wallet = new VestedEscrowSmartWallet();
-            smartWallAdd = address(wallet);
-
-            // We use our admin powers on SmartWalletWhitelistV2 to approve the newly created smart wallet
-            SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).approveWallet(smartWallAdd);
-            
-            // Here, check if the smart wallet has approval to spend tokens out of this entry point contract
-            if(!approvedContracts[smartWallAdd][TOKEN]) {
-                // If it doesn't, approve it
-                IERC20(TOKEN).approve(smartWallAdd, MAX_INT);
-                approvedContracts[smartWallAdd][TOKEN] = true;
-            }
-
-            // We deposit our funds into the wallet
-            wallet.createLock(amountToLock, endTime, VOTING_ESCROW);
-        }
 
         {
             // Initialize the Revest config object
@@ -134,7 +117,25 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
             fnftId = IRevest(revest).mintTimeLock{value:msg.value}(endTime, recipients, quantities, fnftConfig);
         }
 
-        smartWallets[fnftId] = smartWallAdd;
+        address smartWallAdd;
+        {
+            // We deploy the smart wallet
+            smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+            VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+
+            // We use our admin powers on SmartWalletWhitelistV2 to approve the newly created smart wallet
+            SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).approveWallet(smartWallAdd);
+            
+            // Here, check if the smart wallet has approval to spend tokens out of this entry point contract
+            if(!approvedContracts[smartWallAdd][TOKEN]) {
+                // If it doesn't, approve it
+                IERC20(TOKEN).approve(smartWallAdd, MAX_INT);
+                approvedContracts[smartWallAdd][TOKEN] = true;
+            }
+
+            // We deposit our funds into the wallet
+            wallet.createLock(amountToLock, endTime, VOTING_ESCROW);
+        }
     }
 
 
@@ -148,17 +149,16 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         // Security check to make sure the Revest vault is the only contract that can call this method
         address vault = IAddressRegistry(addressRegistry).getTokenVault();
         require(_msgSender() == vault, 'E016');
-        
-        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallets[fnftId]);
+
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+
         wallet.withdraw(VOTING_ESCROW);
         uint balance = IERC20(TOKEN).balanceOf(address(this));
         IERC20(TOKEN).safeTransfer(owner, balance);
 
         // Clean up memory
-        SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).revokeWallet(smartWallets[fnftId]);
-        wallet.cleanMemory();
-        delete smartWallets[fnftId];
-
+        SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).revokeWallet(smartWallAdd);
     }
 
     // Not applicable, as these cannot be split
@@ -196,15 +196,17 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         }
     }
 
-    // Will need a way to communicate necessity of setApprovalFor
+    // TODO: Will need a way to communicate necessity of setApprovalFor
     function _depositAdditionalFunds(uint fnftId, uint value) internal {
         IERC20(TOKEN).safeTransferFrom(msg.sender, address(this), value);
-        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallets[fnftId]);
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
         wallet.increaseAmount(value, VOTING_ESCROW);
     }
 
     function _extendLockupPeriod(uint fnftId, uint unlockTime) internal {
-        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallets[fnftId]);
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
         getRevest().extendFNFTMaturity(fnftId, unlockTime);
         wallet.increaseUnlockTime(unlockTime, VOTING_ESCROW);
     }        
@@ -217,15 +219,13 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
         addressRegistry = addressRegistry_;
     }
 
-
-
     function getCustomMetadata(uint) external pure override returns (string memory) {
         return METADATA;
     }
 
     // TODO: Check this more thoroughly
     function getValue(uint fnftId) public view override returns (uint) {
-        return IVotingEscrow(VOTING_ESCROW).balanceOf(smartWallets[fnftId]);
+        return IVotingEscrow(VOTING_ESCROW).balanceOf(Clones.predictDeterministicAddress(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId))));
     }
 
     // Must always be in native token

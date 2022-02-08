@@ -15,8 +15,6 @@ contract VestedEscrowSmartWallet {
 
     address private immutable MASTER;
 
-    mapping (address => mapping(address => bool)) private approved;
-
     constructor() {
         MASTER = msg.sender;
     }
@@ -32,22 +30,24 @@ contract VestedEscrowSmartWallet {
         // Pull value into this contract
         IERC20(token).safeTransferFrom(MASTER, address(this), value);
         // Single-use approval system
-        if(!approved[votingEscrow][token]) {
+        if(IERC20(token).allowance(address(this), votingEscrow) != MAX_INT) {
             IERC20(token).approve(votingEscrow, MAX_INT);
-            approved[votingEscrow][token] = true;
         }
         // Create the lock
         IVotingEscrow(votingEscrow).create_lock(value, unlockTime);
+        cleanMemory();
     }
 
     function increaseAmount(uint value, address votingEscrow) external onlyMaster {
         address token = IVotingEscrow(votingEscrow).token();
         IERC20(token).safeTransferFrom(MASTER, address(this), value);
         IVotingEscrow(votingEscrow).increase_amount(value);
+        cleanMemory();
     }
 
     function increaseUnlockTime(uint unlockTime, address votingEscrow) external onlyMaster {
         IVotingEscrow(votingEscrow).increase_unlock_time(unlockTime);
+        cleanMemory();
     }
 
     function withdraw(address votingEscrow) external onlyMaster {
@@ -55,19 +55,11 @@ contract VestedEscrowSmartWallet {
         IVotingEscrow(votingEscrow).withdraw();
         uint bal = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransfer(MASTER, bal);
+        cleanMemory();
     }
 
-    function cleanMemory() external onlyMaster {
+    function cleanMemory() internal {
         selfdestruct(payable(MASTER));
     }
-
-    // View functions
-
-    // Purely exists for convenience, just as easily to call through MASTER
-    function getLockEnd(address votingEscrow) external view returns (uint lockEnd) {
-        lockEnd = IVotingEscrow(votingEscrow).locked__end(address(this));
-    }
-
-    
 
 }
