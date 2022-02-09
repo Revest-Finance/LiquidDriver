@@ -11,7 +11,7 @@ module.exports = {
         hardhat: {
             forking: {
                 url: "https://rpc.ftm.tools",
-                blockNumber: 28600421,
+                blockNumber: 30492600,
             },
         },
         rinkeby: {

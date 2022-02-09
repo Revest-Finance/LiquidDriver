@@ -9,6 +9,7 @@ import "./interfaces/IRevest.sol";
 import "./interfaces/IFNFTHandler.sol";
 import "./interfaces/ILockManager.sol";
 import "./interfaces/IVotingEscrow.sol";
+import "./interfaces/IFeeReporter.sol";
 import "./interfaces/IDistributor.sol";
 import "./VestedEscrowSmartWallet.sol";
 import "./SmartWalletWhitelistV2.sol";
@@ -26,6 +27,9 @@ import "./lib/uniswap/IUniswapV2Factory.sol";
 import "./lib/uniswap/IUniswapV2Pair.sol";
 import "./lib/uniswap/IUniswapV2Router02.sol";
 
+// Testing imports
+import "hardhat/console.sol";
+
 interface ITokenVaultTracker {
     function tokenTrackers(address token) external view returns (IRevest.TokenTracker memory);
 }
@@ -36,7 +40,7 @@ interface ITokenVaultTracker {
  * @dev 
  */
 
-contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
+contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165, IFeeReporter {
     
     using SafeERC20 for IERC20;
 
@@ -67,17 +71,17 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
     mapping (address => mapping (address => bool)) private approvedContracts;
 
     // Initialize the contract with the needed valeus
-    constructor(address _provider, address _vE, address _distro) {
+    constructor(address _provider, address _vE, address _distro, uint N_COINS) {
         addressRegistry = _provider;
         VOTING_ESCROW = _vE;
         TOKEN = IVotingEscrow(_vE).token();
         VestedEscrowSmartWallet wallet = new VestedEscrowSmartWallet();
         TEMPLATE = address(wallet);
         DISTRIBUTOR = _distro;
+        
         // Running loop here means we only have to do it once
-        uint nTokens = IDistributor(_distro).N_COINS();
-        REWARD_TOKENS = new address[](nTokens);
-        for(uint i = 0; i < nTokens; i++) {
+        REWARD_TOKENS = new address[](N_COINS);
+        for(uint i = 0; i < N_COINS; i++) {
             REWARD_TOKENS[i] = IDistributor(_distro).tokens(i);
         }
     }
@@ -105,10 +109,6 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
 
             // Use address zero because we're using TokenVault as placeholder storage
             fnftConfig.asset = address(0);
-
-            // Assign how much of that asset the FNFT will hold
-            // TODO: This is not important, can set to zero just as easily
-            fnftConfig.depositAmount = amountToLock;
 
             // TODO: We will need to suppress the default UI for this
             // As we need a custom callback through this contract
@@ -276,6 +276,18 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165 {
 
     function getRevest() internal view returns (IRevest) {
         return IRevest(IAddressRegistry(addressRegistry).getRevest());
+    }
+
+    function getFlatWeiFee(address) external pure override returns (uint) {
+        return 3 ether;
+    }
+
+    function getERC20Fee(address) external pure override returns (uint) {
+        return 0;
+    }
+
+    function getAddressForFNFT(uint fnftId) external view returns (address smartWallAdd) {
+        smartWallAdd = Clones.predictDeterministicAddress(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
     }
 
     

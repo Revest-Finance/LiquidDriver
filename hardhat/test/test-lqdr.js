@@ -5,6 +5,7 @@ const { expect, assert } = require("chai");
 const { ethers } = require("hardhat");
 const { solidity } =  require("ethereum-waffle");
 const { BigNumber } = require("ethers");
+const { VE_ABI, DISTRO_ABI } = require("./utils/abi");
 
 require('dotenv').config();
 
@@ -34,14 +35,12 @@ const WETH ={
     43114:"0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7"
 };
 
-const UNISWAP = {
-    1: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
-    31337: "0x16327E3FbDaCA3bcF7E38F5Af2599D2DDc33aE52",
-    4: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
-    137: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff", //QuickSwap
-    250: "0x16327E3FbDaCA3bcF7E38F5Af2599D2DDc33aE52", //SpiritSwap
-    43114: "0xE54Ca86531e17Ef3616d22Ca28b0D458b6C89106"//Pangolin
-}
+const VOTING_ESCROW = "0x3Ae658656d1C526144db371FaEf2Fff7170654eE";
+const DISTRIBUTOR = "0x095010A79B28c99B2906A8dc217FC33AEfb7Db93";
+const LQDR_TOKEN = "0x10b620b2dbAC4Faa7D7FFD71Da486f5D44cd86f9";
+const WFTM_TOKEN = "0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83";
+
+const N_COINS = 7;
 
 const TEST_TOKEN = {
     1: "0x120a3879da835A5aF037bB2d1456beBd6B54d4bA", //RVST
@@ -61,13 +60,19 @@ const YEAR = DAY * 365;
 
 let owner;
 let chainId;
-let UniswapDemo;
+let RevestLD;
+let SmartWalletChecker;
 let rvstTokenContract;
 let fnftId;
+let xLQDR;
+let feeDistro;
 const quantity = 1;
 
 let whales = [
-    "0x9EB52C04e420E40846f73D09bD47Ab5e25821445", //Holds a ton of RVST
+    "0x9EB52C04e420E40846f73D09bD47Ab5e25821445", // Holds a ton of RVST
+    "0x0055d4369a59bc819f58a76ecc3709407204dbab", // Holds lots of LQDR
+    "0x383ea12347e56932e08638767b8a2b3c18700493", // xLQDR admin
+
 ];
 let whaleSigners = [];
 
@@ -103,24 +108,40 @@ describe("Revest", function () {
             chainId = network.chainId;
             
             let PROVIDER_ADDRESS = PROVIDERS[chainId];
-            let UNISWAP_ADDRESS = UNISWAP[chainId];
+            
             
             console.log(separator);
-            console.log("\tDeploying Uniswap Test System");
-            const UniswapDemoFactory = await ethers.getContractFactory("UniswapDemo");
-            UniswapDemo = await UniswapDemoFactory.deploy(PROVIDER_ADDRESS, UNISWAP_ADDRESS);
-            await UniswapDemo.deployed();
+            console.log("\tDeploying LD Test System");
+            const RevestLiquidDriverFactory = await ethers.getContractFactory("RevestLiquidDriver");
+            RevestLD = await RevestLiquidDriverFactory.deploy(PROVIDER_ADDRESS, VOTING_ESCROW, DISTRIBUTOR, N_COINS);
+            await RevestLD.deployed();
+
+            console.log("\tDeployed LD Test System!");
+
+            const SmartWalletCheckerFactory = await ethers.getContractFactory("SmartWalletWhitelistV2");
+            SmartWalletChecker = await SmartWalletCheckerFactory.deploy(owner.address);
+            await SmartWalletChecker.deployed();
+
+            await SmartWalletChecker.changeAdmin(RevestLD.address, true);
 
             // The contract object
-            rvstTokenContract = new ethers.Contract(WETH[chainId], abi, owner);
+            rvstTokenContract = new ethers.Contract(LQDR_TOKEN, abi, owner);
+
+            // Load xLQDR and FeeDistributor objects
+            xLQDR = new ethers.Contract(VOTING_ESCROW, VE_ABI, owner);
+            feeDistro = new ethers.Contract(DISTRIBUTOR, DISTRO_ABI, owner);
 
             for (const whale of whales) {
                 let signer = await ethers.provider.getSigner(whale);
                 whaleSigners.push(signer);
                 setupImpersonator(whale);
-                await approveAll(signer, UniswapDemo.address);
+                await approveAll(signer, xLQDR.address);
+                await approveAll(signer, feeDistro.address);
             }
-            await approveAll(owner, UniswapDemo.address);
+            await approveAll(owner, RevestLD.address);
+
+            await xLQDR.connect(whaleSigners[2]).commit_smart_wallet_checker(SmartWalletChecker.address);
+            await xLQDR.connect(whaleSigners[2]).apply_smart_wallet_checker();
 
             resolve();
         });
@@ -133,24 +154,30 @@ describe("Revest", function () {
         let time = block.timestamp;
 
         // Outline the parameters that will govern the FNFT
-        let expiration = time + 3600 * 24;
+        let expiration = time + (2 * 365 * 60 * 60 * 24); // Two years in future
         let fee = ethers.utils.parseEther('3');//FTM fee
-        let amountPer = ethers.utils.parseEther('0.0001'); //WFTM
-        let asset1 = WETH[chainId]; 
-        let asset2 = TEST_TOKEN[chainId];
+        let amount = ethers.utils.parseEther('10'); //LQDR
 
         // Mint the FNFT
-        fnftId = await UniswapDemo.connect(whaleSigners[0]).callStatic.mintTimeLockToUniswap(expiration,amountPer,quantity, [asset1, asset2], {value:fee});
-        let txn = await UniswapDemo.connect(whaleSigners[0]).mintTimeLockToUniswap(expiration,amountPer,quantity, [asset1, asset2], {value:fee});
+        await rvstTokenContract.connect(whaleSigners[1]).approve(RevestLD.address, ethers.constants.MaxInt256);
+        fnftId = await RevestLD.connect(whaleSigners[1]).callStatic.lockLiquidDriverTokens(expiration, amount, {value:fee});
+        let txn = await RevestLD.connect(whaleSigners[1]).lockLiquidDriverTokens(expiration, amount, {value:fee});
         await txn.wait();
+
+        let expectedValue = await RevestLD.getValue(fnftId);
+        console.log("Value should be slightly less than 10 eth: " + expectedValue.toString());
+
+        let smartWalletAddress = await RevestLD.getAddressForFNFT(fnftId);
+        console.log("Smart wallet address at: " + smartWalletAddress);
+
     });
 
-    it("Should test the metadata calls", async () => {
-        let res = await UniswapDemo.getOutputDisplayValues(fnftId);
-        console.log(res);
+    it("Should accumulate fees", async () => {
+        
     });
 
     it("Should fast-forward time and attempt to unlock that FNFT", async () => {
+        return;
         await timeTravel(3*DAY);
         // Instantiate the Revest and WETH contracts
         let wethContract = new ethers.Contract(TEST_TOKEN[chainId], abi, whaleSigners[0]);
