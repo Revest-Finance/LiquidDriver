@@ -75,6 +75,15 @@ contract VestedEscrowSmartWallet {
         cleanMemory();
     }
 
+    /// Proxy function to send arbitrary messages. Useful for delegating votes and similar activities
+    function proxyExecute(
+        address destination,
+        bytes memory data
+    ) external payable onlyMaster {
+        (bool success, )= destination.call{value:msg.value}(data);
+        require(success, 'Proxy call failed!');
+    }
+
     /// Credit to doublesharp for the brilliant gas-saving concept
     /// Self-destructing clone pattern
     function cleanMemory() internal {
