@@ -36,19 +36,19 @@ contract VestedEscrowSmartWallet {
         }
         // Create the lock
         IVotingEscrow(votingEscrow).create_lock(value, unlockTime);
-        cleanMemory();
+        _cleanMemory();
     }
 
     function increaseAmount(uint value, address votingEscrow) external onlyMaster {
         address token = IVotingEscrow(votingEscrow).token();
         IERC20(token).safeTransferFrom(MASTER, address(this), value);
         IVotingEscrow(votingEscrow).increase_amount(value);
-        cleanMemory();
+        _cleanMemory();
     }
 
     function increaseUnlockTime(uint unlockTime, address votingEscrow) external onlyMaster {
         IVotingEscrow(votingEscrow).increase_unlock_time(unlockTime);
-        cleanMemory();
+        _cleanMemory();
     }
 
     function withdraw(address votingEscrow) external onlyMaster {
@@ -56,11 +56,11 @@ contract VestedEscrowSmartWallet {
         IVotingEscrow(votingEscrow).withdraw();
         uint bal = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransfer(MASTER, bal);
-        cleanMemory();
+        _cleanMemory();
     }
 
-    function claimRewards(address distributor, address votingEscrow, address[] memory tokens) external onlyMaster returns (uint[] memory balances) {
-        balances = new uint[](tokens.length);
+    function claimRewards(address distributor, address votingEscrow, address[] memory tokens) external onlyMaster returns (uint[] memory) {
+        uint[] memory balances = new uint[](tokens.length);
         bool exitFlag;
         while(!exitFlag) {
             IDistributor(distributor).claim();
@@ -72,21 +72,26 @@ contract VestedEscrowSmartWallet {
             balances[i] = bal;
             IERC20(token).safeTransfer(MASTER, bal);
         }
-        cleanMemory();
+        return balances;
     }
 
     /// Proxy function to send arbitrary messages. Useful for delegating votes and similar activities
     function proxyExecute(
         address destination,
         bytes memory data
-    ) external payable onlyMaster {
-        (bool success, )= destination.call{value:msg.value}(data);
+    ) external payable onlyMaster returns (bytes memory dataOut) {
+        (bool success, bytes memory dataTemp)= destination.call{value:msg.value}(data);
         require(success, 'Proxy call failed!');
+        dataOut = dataTemp;
     }
 
     /// Credit to doublesharp for the brilliant gas-saving concept
     /// Self-destructing clone pattern
-    function cleanMemory() internal {
+    function cleanMemory() external onlyMaster {
+        _cleanMemory();
+    }
+
+    function _cleanMemory() internal {
         selfdestruct(payable(MASTER));
     }
 

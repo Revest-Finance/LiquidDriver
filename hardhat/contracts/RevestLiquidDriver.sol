@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "./interfaces/IAddressRegistry.sol";
-import "./interfaces/IOutputReceiverV2.sol";
+import "./interfaces/IOutputReceiverV3.sol";
 import "./interfaces/ITokenVault.sol";
 import "./interfaces/IRevest.sol";
 import "./interfaces/IFNFTHandler.sol";
@@ -40,7 +40,7 @@ interface ITokenVaultTracker {
  * @dev 
  */
 
-contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165, IFeeReporter {
+contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter {
     
     using SafeERC20 for IERC20;
 
@@ -86,11 +86,23 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165, IFeeReporter 
         }
     }
 
+    modifier onlyRevestController() {
+        require(msg.sender == IAddressRegistry(addressRegistry).getRevest(), 'Unauthorized Access!');
+        _;
+    }
+
+    modifier onlyTokenHolder(uint fnftId) {
+        IAddressRegistry reg = IAddressRegistry(addressRegistry);
+        require(IFNFTHandler(reg.getRevestFNFT()).getBalance(msg.sender, fnftId) > 0, 'E064');
+        _;
+    }
+
     // Allows core Revest contracts to make sure this contract can do what is needed
     // Mandatory method
     function supportsInterface(bytes4 interfaceId) public view override(ERC165, IERC165) returns (bool) {
         return interfaceId == type(IOutputReceiver).interfaceId
             || interfaceId == type(IOutputReceiverV2).interfaceId
+            || interfaceId == type(IOutputReceiverV3).interfaceId
             || super.supportsInterface(interfaceId);
     }
 
@@ -108,10 +120,12 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165, IFeeReporter 
             IRevest.FNFTConfig memory fnftConfig;
 
             // Use address zero because we're using TokenVault as placeholder storage
-            fnftConfig.asset = address(0);
+            // Use a real amount so our system shows that LQDR is locked
+            fnftConfig.depositAmount = amountToLock;
 
-            // TODO: We will need to suppress the default UI for this
-            // As we need a custom callback through this contract
+            // Want FNFT to be extendable and support multiple deposits
+            fnftConfig.isMulti = true;
+
             fnftConfig.maturityExtension = true;
 
             // Will result in the asset being sent back to this contract upon withdrawal
@@ -193,47 +207,38 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165, IFeeReporter 
         bytes memory args
     ) external payable override {}
 
+    // Callback from Revest.sol to extend maturity
+    function handleTimelockExtensions(uint fnftId, uint expiration, address) external override onlyRevestController {
+        require(block.timestamp - expiration <= 2 * 365 days, 'Max lockup is 2 years');
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+        wallet.increaseUnlockTime(expiration, VOTING_ESCROW);
+    }
+
+    /// Prerequisite: User has approved this contract to spend tokens on their behalf
+    function handleAdditionalDeposit(uint fnftId, uint amountToDeposit, uint, address caller) external override onlyRevestController {
+        IERC20(TOKEN).safeTransferFrom(caller, address(this), amountToDeposit);
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+        wallet.increaseAmount(amountToDeposit, VOTING_ESCROW);
+    }
+
+    // Not applicable
+    function handleSplitOperation(uint fnftId, uint[] memory proportions, uint quantity, address caller) external override {}
+
+    // Claims rewards on user's behalf
     function triggerOutputReceiverUpdate(
         uint fnftId,
-        bytes memory args
-    ) external override {
-        // Lots to be done here
-        IAddressRegistry reg = IAddressRegistry(addressRegistry);
-        require(IFNFTHandler(reg.getRevestFNFT()).getBalance(_msgSender(), fnftId) > 0, 'E064');
-
-        (uint methodForUpdate, uint value, uint unlockTime) = abi.decode(args, (uint, uint, uint));
-        if(methodForUpdate == 0) {
-            _depositAdditionalFunds(fnftId, value);
-        } else if(methodForUpdate == 1) {
-            _extendLockupPeriod(fnftId, unlockTime);
-        } else if(methodForUpdate == 2) {
-            _claimRewards(fnftId);
-        }
-    }
-
-    // TODO: Will need a way to communicate necessity of setApprovalFor
-    function _depositAdditionalFunds(uint fnftId, uint value) internal {
-        IERC20(TOKEN).safeTransferFrom(msg.sender, address(this), value);
-        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
-        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
-        wallet.increaseAmount(value, VOTING_ESCROW);
-    }
-
-    function _extendLockupPeriod(uint fnftId, uint unlockTime) internal {
-        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
-        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
-        getRevest().extendFNFTMaturity(fnftId, unlockTime);
-        wallet.increaseUnlockTime(unlockTime, VOTING_ESCROW);
-    }        
-
-    function _claimRewards(uint fnftId) internal {
+        bytes memory
+    ) external override onlyTokenHolder(fnftId) {
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
         uint[] memory rewards = wallet.claimRewards(DISTRIBUTOR, VOTING_ESCROW, REWARD_TOKENS);
+        wallet.cleanMemory();
         for(uint i = 0; i < rewards.length; i++) {
             IERC20(REWARD_TOKENS[i]).transfer(msg.sender, rewards[i]);
         }
-    }
+    }       
 
     /// Admin Functions
 
@@ -241,29 +246,28 @@ contract RevestLiquidDriver is IOutputReceiverV2, Ownable, ERC165, IFeeReporter 
         addressRegistry = addressRegistry_;
     }
 
-    function setDistributor(address _distro) external onlyOwner {
+    function setDistributor(address _distro, uint nTokens) external onlyOwner {
         DISTRIBUTOR = _distro;
-        uint nTokens = IDistributor(_distro).N_COINS();
         REWARD_TOKENS = new address[](nTokens);
         for(uint i = 0; i < nTokens; i++) {
             REWARD_TOKENS[i] = IDistributor(_distro).tokens(i);
         }
     }
 
+    /// View Functions
+
     function getCustomMetadata(uint) external pure override returns (string memory) {
         return METADATA;
     }
 
-    /// View Functions
-
-    // TODO: Check this more thoroughly
+    // Will give balance in xLQDR
     function getValue(uint fnftId) public view override returns (uint) {
         return IVotingEscrow(VOTING_ESCROW).balanceOf(Clones.predictDeterministicAddress(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId))));
     }
 
     // Must always be in native token
     function getAsset(uint) external view override returns (address) {
-        return TOKEN;
+        return VOTING_ESCROW;
     }
 
     function getOutputDisplayValues(uint fnftId) external view override returns (bytes memory) {

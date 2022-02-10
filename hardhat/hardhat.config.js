@@ -11,7 +11,7 @@ module.exports = {
         hardhat: {
             forking: {
                 url: "https://rpc.ftm.tools",
-                blockNumber: 30492600,
+                blockNumber: 30568516,
             },
         },
         rinkeby: {
@@ -63,7 +63,7 @@ module.exports = {
         artifacts: "./artifacts",
     },
     mocha: {
-        timeout: 60000,
+        timeout: 120000,
     },
     namedAccounts: {
         deployer: {
