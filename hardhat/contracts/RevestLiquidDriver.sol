@@ -209,7 +209,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
     // Callback from Revest.sol to extend maturity
     function handleTimelockExtensions(uint fnftId, uint expiration, address) external override onlyRevestController {
-        require(block.timestamp - expiration <= 2 * 365 days, 'Max lockup is 2 years');
+        require(expiration - block.timestamp <= 2 * 365 days, 'Max lockup is 2 years');
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
         wallet.increaseUnlockTime(expiration, VOTING_ESCROW);

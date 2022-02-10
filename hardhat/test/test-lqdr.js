@@ -49,7 +49,11 @@ const TEST_TOKEN = {
 
 // Tooled for mainnet Ethereum
 const REVEST = '0x0e29561C367e961A020A6d91486db28B5a48319f';
-const revestABI = ['function withdrawFNFT(uint tokenUID, uint quantity) external'];
+const revestABI = [
+                    'function withdrawFNFT(uint tokenUID, uint quantity) external',
+                    'function depositAdditionalToFNFT(uint fnftId, uint amount,uint quantity) external returns (uint)',
+                    'function extendFNFTMaturity(uint fnftId,uint endTime ) external returns (uint)',
+                ];
 
 const HOUR = 3600;
 const DAY = HOUR * 24;
@@ -183,6 +187,7 @@ describe("Revest", function () {
     });
 
     it("Should accumulate fees", async () => {        
+        
         // We start by transferring tokens to the Fee Distributor
         // In this case, WFTM and LQDR
         let amount = ethers.utils.parseEther('100'); //LQDR
@@ -195,7 +200,9 @@ describe("Revest", function () {
         let origBalLQDR = await rvstTokenContract.balanceOf(whales[1]);
         let origBalWFTM = await wftm.balanceOf(whales[1]);
 
-        await RevestLD.connect(whaleSigners[1]).triggerOutputReceiverUpdate(fnftId, '0x0');
+        let bytes = ethers.utils.formatBytes32String('0');
+
+        await RevestLD.connect(whaleSigners[1]).triggerOutputReceiverUpdate(fnftId, bytes);
 
         let newBalLQDR = await rvstTokenContract.balanceOf(whales[1]);
         let newWFTM = await wftm.balanceOf(whales[1]);
@@ -211,7 +218,7 @@ describe("Revest", function () {
     });
 
     it("Should deposit additional LQDR in the FNFT", async () => {
-
+        
         await timeTravel(1 * YEAR);
 
         let curValue = await RevestLD.getValue(fnftId);
@@ -219,7 +226,7 @@ describe("Revest", function () {
         // Will deposit as much as we did originally, should double our value
         let amount = ethers.utils.parseEther('10');
 
-        await RevestContract.depositAdditionalToFNFT(fnftId, amount, 1);
+        await RevestContract.connect(whaleSigners[1]).depositAdditionalToFNFT(fnftId, amount, 1);
 
         let newValue = await RevestLD.getValue(fnftId);
 
@@ -232,16 +239,17 @@ describe("Revest", function () {
     });
 
     it("Should relock the xLQDR for maximum time period", async () => {
-
+        
+        await timeTravel(1 * YEAR);
         let curValue = await RevestLD.getValue(fnftId);
 
         // Will deposit as much as we did originally, should double our value
         let recent = await ethers.provider.getBlockNumber();
         let block = await ethers.provider.getBlock(recent);
         let time = block.timestamp;
-        let expiration = time + (2 * 365 * 60 * 60 * 24); // Two years in future
+        let expiration = time + (2 * 365 * 60 * 60 * 24 - 3600); // Two years in future
 
-        await RevestContract.extendFNFTMaturity(fnftId, expiration);
+        await RevestContract.connect(whaleSigners[1]).extendFNFTMaturity(fnftId, expiration);
 
         let newValue = await RevestLD.getValue(fnftId);
 
@@ -249,7 +257,7 @@ describe("Revest", function () {
         console.log("\tCurrent value of xLQDR is: " + ethers.utils.formatEther(newValue).toString());
 
         // Allow for integer drift
-        assert(newValue.sub(curValue.mul(2)).lt(ethers.utils.parseEther('0.0001')));
+        assert(newValue.sub(curValue.mul(2)).lt(ethers.utils.parseEther('0.1')));
 
     });
 
@@ -259,11 +267,11 @@ describe("Revest", function () {
 
         let curValueLQDR = await rvstTokenContract.balanceOf(whales[1]);
 
-        await RevestContract.withdrawFNFT(fnftId, 1);
+        await RevestContract.connect(whaleSigners[1]).withdrawFNFT(fnftId, 1);
 
         let newValue = await rvstTokenContract.balanceOf(whales[1]);
 
-        console.log("\n\tOriginal value of LQDR was: " + ethers.utils.formatEther(curValue).toString());
+        console.log("\n\tOriginal value of LQDR was: " + ethers.utils.formatEther(curValueLQDR).toString());
         console.log("\tCurrent value of LQDR is: " + ethers.utils.formatEther(newValue).toString());
 
         // Allow for integer drift
