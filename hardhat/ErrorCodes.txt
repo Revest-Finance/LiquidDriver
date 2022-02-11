@@ -2,13 +2,13 @@
 
 E001 - something went wrong with minting a time lock
 E002 - time lock unlock time is in the past
-E003 – for some reason, a number that should not be less than zero, is less than zero or zero
-E004 – an address is set to the null address that should never be the null address
+E003 – for some reason, a number that should not be less than zero, is less than zero or zero
+E004 – an address is set to the null address that should never be the null address
 E005 - fee insufficient for current valuation of assets – plese check to ensure you are sending the correct amount of your native currency
 E006 – Requested quantity for withdrawal of FNFT of given ID is greater than quantity the user making the call has available of that ID
 E007 - FNFT with the requested ID does not exist
 E008 – Only address and value locks may be unlocked by external calls
-E009 – Address locks may only be unlocked by the address specified at creation
+E009 – Address locks may only be unlocked by the address specified at creation
 E010 – Time lock is not yet mature and it is therefore not possible to withdraw from it
 E011 – Time lock with requested ID does not exist
 E012 – Value lock with requested ID does not exist
