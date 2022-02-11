@@ -59,7 +59,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     address public immutable TEMPLATE;
 
     // The file which tells our frontend how to visually represent such an FNFT
-    string public constant METADATA = "https://revest.mypinata.cloud/ipfs/QmQm9nkwvfevS9hwvJxebo2qWji8H6cjbw9ZRKacXMLRGw";
+    string public constant METADATA = "https://revest.mypinata.cloud/ipfs/Qme777honQzH1Fa5iKXALL4ZYdxJbYpXZ2YQJRUJ7Sbvf5";
 
     // Constant used for approval
     uint private constant MAX_INT = 2 ** 256 - 1;
@@ -270,7 +270,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     }
 
     function getOutputDisplayValues(uint fnftId) external view override returns (bytes memory displayData) {
-        uint[] memory rewards = getRewardsForFNFT(fnftId);
+        (uint[] memory rewards, bool hasRewards) = getRewardsForFNFT(fnftId);
         string[] memory rewardsDesc = new string[](REWARD_TOKENS.length);
         for(uint i = 0; i < REWARD_TOKENS.length; i++) {
             address token = REWARD_TOKENS[i];
@@ -279,7 +279,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
             rewardsDesc[i] = string(abi.encodePacked(par1, par2));
         }
         address smartWallet = getAddressForFNFT(fnftId);
-        displayData = abi.encode(smartWallet, rewardsDesc);
+        displayData = abi.encode(smartWallet, rewardsDesc, hasRewards);
     }
 
     function getAddressRegistry() external view override returns (address) {
@@ -303,7 +303,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     }
 
     // Find rewards for a given smart wallet using the Curve formulae
-    function getRewardsForFNFT(uint fnftId) private view returns (uint[] memory rewards) {
+    function getRewardsForFNFT(uint fnftId) private view returns (uint[] memory rewards, bool rewardsPresent) {
         uint userEpoch;
         IDistributor distro = IDistributor(DISTRIBUTOR);
         IVotingEscrow voting = IVotingEscrow(VOTING_ESCROW);
@@ -315,7 +315,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         uint startTime = distro.start_time();
         
         if(maxUserEpoch == 0) {
-            return rewards;
+            return (rewards, rewardsPresent);
         }
 
         uint dayCursor = distro.time_cursor_of(smartWallAdd);
@@ -336,7 +336,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         }
 
         if(dayCursor >= lastTokenTime) {
-            return rewards;
+            return (rewards, rewardsPresent);
         }
 
         if(dayCursor < startTime) {
@@ -372,13 +372,16 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
                 if(balanceOf > 0) {
                     for(uint j = 0; j < REWARD_TOKENS.length; j++) {
                         rewards[j] += balanceOf * distro.tokens_per_day(dayCursor, j) / distro.ve_supply(dayCursor);
+                        if(rewards[j] > 0 && !rewardsPresent) {
+                            rewardsPresent = true;
+                        } 
                     }
                 }
                 dayCursor += DAY;
             }
         }
 
-        return rewards;
+        return (rewards, rewardsPresent);
     }
 
     // Implementation of Binary Search

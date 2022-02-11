@@ -1,0 +1,30 @@
+{
+    "name":"Revest Liquid Driver Integration",
+    "description":"Allows locking LQDR into xLQDR with liquid positions",
+    "front_display": [
+        {
+            "label":"Rewards available!",
+            "encode":"bool",
+            "primitive":"alert",
+            "extra_data": {
+                "block_withdrawal":true
+            },
+            "index":2
+        }
+    ],
+    "info_modal": [
+        {
+            "label":"Smart Wallet Address",
+            "encode":"address",
+            "primitive":"string",
+            "index":0
+        },
+        {
+            "label":"Assets and Rewards",
+            "encode":"string[]",
+            "primitive":"stringArray",
+            "index":1
+        }
+        
+    ]
+}
