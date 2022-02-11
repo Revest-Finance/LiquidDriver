@@ -10,6 +10,13 @@ import '@openzeppelin/contracts/utils/introspection/IERC165.sol';
  */
 interface IVotingEscrow {
 
+    struct Point {
+        int128 bias;
+        int128 slope;
+        uint ts;
+        uint blk;
+    }
+
     function create_lock(uint _value, uint _unlock_time) external;
 
     function increase_amount(uint _value) external;
@@ -27,5 +34,7 @@ interface IVotingEscrow {
     function balanceOf(address _addr) external view returns (uint balance);
 
     function user_point_epoch(address _addr) external view returns (uint epoch);
+
+    function user_point_history(address _addr, uint index) external view returns (Point memory pt);
 
 }

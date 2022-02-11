@@ -70,11 +70,13 @@ let SmartWalletChecker;
 let rvstTokenContract;
 let wftm;
 let fnftId;
+let fnftId2;
 let xLQDR;
 let feeDistro;
+let RevestHelperCon;
 const quantity = 1;
 
-let whales = [
+let whales = [  
     "0x9EB52C04e420E40846f73D09bD47Ab5e25821445", // Holds a ton of RVST
     "0x0055d4369a59bc819f58a76ecc3709407204dbab", // Holds lots of LQDR
     "0x383ea12347e56932e08638767b8a2b3c18700493", // xLQDR admin
@@ -114,8 +116,7 @@ describe("Revest", function () {
             chainId = network.chainId;
             
             let PROVIDER_ADDRESS = PROVIDERS[chainId];
-            
-            
+
             console.log(separator);
             console.log("\tDeploying LD Test System");
             const RevestLiquidDriverFactory = await ethers.getContractFactory("RevestLiquidDriver");
@@ -182,6 +183,7 @@ describe("Revest", function () {
         console.log("\tSmart wallet address at: " + smartWalletAddress);
 
         // Mint a second FNFT to split the fees 50/50
+        fnftId2 = await RevestLD.connect(whaleSigners[1]).callStatic.lockLiquidDriverTokens(expiration, amount, {value:fee});
         txn = await RevestLD.connect(whaleSigners[1]).lockLiquidDriverTokens(expiration, amount, {value:fee});
         await txn.wait();
     });
@@ -201,6 +203,14 @@ describe("Revest", function () {
         let origBalWFTM = await wftm.balanceOf(whales[1]);
 
         let bytes = ethers.utils.formatBytes32String('0');
+
+        await RevestLD.connect(whaleSigners[1]).triggerOutputReceiverUpdate(fnftId2, bytes);
+
+        let currentState = await RevestLD.getOutputDisplayValues(fnftId);
+        let abiCoder = ethers.utils.defaultAbiCoder;
+        let state = abiCoder.decode(['address', 'string[]'],currentState);
+        console.log(state);
+
 
         await RevestLD.connect(whaleSigners[1]).triggerOutputReceiverUpdate(fnftId, bytes);
 
@@ -240,7 +250,6 @@ describe("Revest", function () {
 
     it("Should relock the xLQDR for maximum time period", async () => {
         
-        await timeTravel(1 * YEAR);
         let curValue = await RevestLD.getValue(fnftId);
 
         // Will deposit as much as we did originally, should double our value

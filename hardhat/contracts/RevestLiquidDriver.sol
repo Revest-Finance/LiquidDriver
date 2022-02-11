@@ -22,10 +22,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
-// Uniswap imports
-import "./lib/uniswap/IUniswapV2Factory.sol";
-import "./lib/uniswap/IUniswapV2Pair.sol";
-import "./lib/uniswap/IUniswapV2Router02.sol";
+// Libraries
+import "./lib/RevestHelper.sol";
 
 // Testing imports
 import "hardhat/console.sol";
@@ -36,10 +34,9 @@ interface ITokenVaultTracker {
 
 /**
  * @title LiquidDriver <> Revest integration for tokenizing xLQDR positions
-*  @author RobAnon
+ * @author RobAnon
  * @dev 
  */
-
 contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter {
     
     using SafeERC20 for IERC20;
@@ -66,6 +63,8 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
     // Constant used for approval
     uint private constant MAX_INT = 2 ** 256 - 1;
+
+    uint private constant DAY = 86400;
 
     // For tracking if a given contract has approval for token
     mapping (address => mapping (address => bool)) private approvedContracts;
@@ -270,8 +269,17 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         return VOTING_ESCROW;
     }
 
-    function getOutputDisplayValues(uint fnftId) external view override returns (bytes memory) {
-        // TODO: Implement
+    function getOutputDisplayValues(uint fnftId) external view override returns (bytes memory displayData) {
+        uint[] memory rewards = getRewardsForFNFT(fnftId);
+        string[] memory rewardsDesc = new string[](REWARD_TOKENS.length);
+        for(uint i = 0; i < REWARD_TOKENS.length; i++) {
+            address token = REWARD_TOKENS[i];
+            string memory par1 = string(abi.encodePacked(RevestHelper.getName(token),": "));
+            string memory par2 = string(abi.encodePacked(RevestHelper.amountToDecimal(rewards[i], token), " [", RevestHelper.getTicker(token), "] Tokens Available"));
+            rewardsDesc[i] = string(abi.encodePacked(par1, par2));
+        }
+        address smartWallet = getAddressForFNFT(fnftId);
+        displayData = abi.encode(smartWallet, rewardsDesc);
     }
 
     function getAddressRegistry() external view override returns (address) {
@@ -290,8 +298,106 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         return 0;
     }
 
-    function getAddressForFNFT(uint fnftId) external view returns (address smartWallAdd) {
+    function getAddressForFNFT(uint fnftId) public view returns (address smartWallAdd) {
         smartWallAdd = Clones.predictDeterministicAddress(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+    }
+
+    // Find rewards for a given smart wallet using the Curve formulae
+    function getRewardsForFNFT(uint fnftId) private view returns (uint[] memory rewards) {
+        uint userEpoch;
+        IDistributor distro = IDistributor(DISTRIBUTOR);
+        IVotingEscrow voting = IVotingEscrow(VOTING_ESCROW);
+        address smartWallAdd = getAddressForFNFT(fnftId);
+        
+        uint lastTokenTime = distro.last_token_times(0);
+        rewards = new uint[](REWARD_TOKENS.length);
+        uint maxUserEpoch = voting.user_point_epoch(smartWallAdd);
+        uint startTime = distro.start_time();
+        
+        if(maxUserEpoch == 0) {
+            return rewards;
+        }
+
+        uint dayCursor = distro.time_cursor_of(smartWallAdd);
+        if(dayCursor == 0) {
+            userEpoch = findTimestampUserEpoch(smartWallAdd, startTime, maxUserEpoch);
+        } else {
+            userEpoch = distro.user_epoch_of(smartWallAdd);
+        }
+
+        if(userEpoch == 0) {
+            userEpoch = 1;
+        }
+
+        IVotingEscrow.Point memory userPoint = voting.user_point_history(smartWallAdd, userEpoch);
+
+        if(dayCursor == 0) {
+            dayCursor = (userPoint.ts + DAY - 1) / DAY * DAY;
+        }
+
+        if(dayCursor >= lastTokenTime) {
+            return rewards;
+        }
+
+        if(dayCursor < startTime) {
+            dayCursor = startTime;
+        }
+
+        IVotingEscrow.Point memory oldUserPoint;
+
+        for(uint i = 0; i < 150; i++) {
+            if(dayCursor >= lastTokenTime) {
+                break;
+            }
+
+            if(dayCursor >= userPoint.ts && userEpoch <= maxUserEpoch) {
+                userEpoch++;
+                oldUserPoint = userPoint;
+                if(userEpoch > maxUserEpoch) {
+                    IVotingEscrow.Point memory tmpPoint;
+                    userPoint = tmpPoint;
+                } else {
+                    userPoint = voting.user_point_history(smartWallAdd, userEpoch);
+                }
+            } else {
+                uint balanceOf;
+                {
+                    int128 dt = int128(uint128(dayCursor - oldUserPoint.ts));
+                    int128 res = oldUserPoint.bias - dt * oldUserPoint.slope;
+                    balanceOf = res > 0 ? uint(int256(res)) : 0;
+                }
+                if(balanceOf == 0 && userEpoch > maxUserEpoch) {
+                    break;
+                } 
+                if(balanceOf > 0) {
+                    for(uint j = 0; j < REWARD_TOKENS.length; j++) {
+                        rewards[j] += balanceOf * distro.tokens_per_day(dayCursor, j) / distro.ve_supply(dayCursor);
+                    }
+                }
+                dayCursor += DAY;
+            }
+        }
+
+        return rewards;
+    }
+
+    // Implementation of Binary Search
+    function findTimestampUserEpoch(address user, uint timestamp, uint maxUserEpoch) private view returns (uint timestampEpoch) {
+        uint min;
+        uint max = maxUserEpoch;
+        for(uint i = 0; i < 128; i++) {
+            if(min >= max) {
+                break;
+            }
+            uint mid = (min + max + 2) / 2;
+            uint ts = IVotingEscrow(VOTING_ESCROW).user_point_history(user, mid).ts;
+            if(ts <= timestamp) {
+                min = mid;
+            } else {
+                max = mid - 1;
+            }
+        }
+        return min;
     }
 
     

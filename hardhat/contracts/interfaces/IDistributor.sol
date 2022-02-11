@@ -18,4 +18,16 @@ interface IDistributor {
 
     function user_epoch_of(address _addr) external view returns (uint epoch);
 
+    function tokens_per_day(uint index, uint index2) external view returns (uint tokensPerDay);
+
+    function start_time() external view returns (uint startTime);
+
+    function last_token_times(uint index) external view returns (uint lastTime);//Call with index 0
+
+    function time_cursor() external view returns (uint timeCursor);
+
+    function time_cursor_of(address addr) external view returns (uint timeCursor);
+
+    function ve_supply(uint index) external view returns (uint supply);
+
 }
