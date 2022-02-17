@@ -239,6 +239,17 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         }
     }       
 
+    function proxyExecute(
+        uint fnftId,
+        address destination,
+        bytes memory data
+    ) external onlyTokenHolder(fnftId) returns (bytes memory dataOut) {
+        address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
+        VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+        dataOut = wallet.proxyExecute(destination, data);
+        wallet.cleanMemory();
+    }
+
     /// Admin Functions
 
     function setAddressRegistry(address addressRegistry_) external override onlyOwner {
