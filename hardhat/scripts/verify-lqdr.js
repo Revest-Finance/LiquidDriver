@@ -24,16 +24,34 @@ const UNISWAP = {
 
 async function main() {
 
-    let DEPLOYED_CONTRACT = "0xbA61d5EC263f54394Db19F4c0bB3E505C28175BD"
+    let SMART_WALL_CHECKER = "0xBaDD93032BAb44A4F32C9cf70239f752F9907c4F";
+    let REVEST_LIQUID_DRIVER = "0x3F3729DbC2ee02Ed978dB2596580146DCB191dC0";
+
+    const DEPLOYER = "0x9EB52C04e420E40846f73D09bD47Ab5e25821445";
+    const VOTING_ESCROW = "0x3Ae658656d1C526144db371FaEf2Fff7170654eE";
+    const DISTRIBUTOR = "0x095010A79B28c99B2906A8dc217FC33AEfb7Db93";
+    const LQDR_TOKEN = "0x10b620b2dbAC4Faa7D7FFD71Da486f5D44cd86f9";
+    const WFTM_TOKEN = "0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83";
+    const N_COINS = 7;
+
 
     const network = await ethers.provider.getNetwork();
     const chainId = network.chainId;
 
     await run("verify:verify", {
-        address: DEPLOYED_CONTRACT,
+        address: REVEST_LIQUID_DRIVER,
         constructorArguments: [
             PROVIDERS[chainId],
-            UNISWAP[chainId]
+            VOTING_ESCROW, 
+            DISTRIBUTOR, 
+            N_COINS
+        ],
+    });
+
+    await run("verify:verify", {
+        address: SMART_WALL_CHECKER,
+        constructorArguments: [
+            DEPLOYER
         ],
     });
 

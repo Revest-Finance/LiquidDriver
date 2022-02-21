@@ -25,9 +25,6 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 // Libraries
 import "./lib/RevestHelper.sol";
 
-// Testing imports
-import "hardhat/console.sol";
-
 interface ITokenVaultTracker {
     function tokenTrackers(address token) external view returns (IRevest.TokenTracker memory);
 }
