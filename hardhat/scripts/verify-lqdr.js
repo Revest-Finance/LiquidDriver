@@ -24,8 +24,8 @@ const UNISWAP = {
 
 async function main() {
 
-    let SMART_WALL_CHECKER = "0xBaDD93032BAb44A4F32C9cf70239f752F9907c4F";
-    let REVEST_LIQUID_DRIVER = "0x3F3729DbC2ee02Ed978dB2596580146DCB191dC0";
+    //let SMART_WALL_CHECKER = "0xBaDD93032BAb44A4F32C9cf70239f752F9907c4F";
+    let REVEST_LIQUID_DRIVER = "0x74fB7d0dA80CEb606872B33c6BCd3cC458BB43aF";
 
     const DEPLOYER = "0x9EB52C04e420E40846f73D09bD47Ab5e25821445";
     const VOTING_ESCROW = "0x3Ae658656d1C526144db371FaEf2Fff7170654eE";
@@ -47,13 +47,13 @@ async function main() {
             N_COINS
         ],
     });
-
+    /*
     await run("verify:verify", {
         address: SMART_WALL_CHECKER,
         constructorArguments: [
             DEPLOYER
         ],
-    });
+    });*/
 
 
 }

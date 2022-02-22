@@ -63,6 +63,7 @@ async function main() {
     await RevestLD.deployed();
     console.log("\tRevestLiquidDriver Deployed at: " + RevestLD.address);
 
+    /*
     console.log(seperator);
     console.log("\tDeploying Upgraded SmartWallet");
     const SmartWalletCheckerFactory = await ethers.getContractFactory("SmartWalletWhitelistV2");
@@ -70,12 +71,13 @@ async function main() {
     await SmartWalletChecker.deployed();
     console.log("\tSmartWalletChecker Deployed at: " + SmartWalletChecker.address);
 
+    
     let tx = await SmartWalletChecker.changeAdmin(RevestLD.address, true);
     await tx.wait();
     tx = await SmartWalletChecker.changeAdmin(CURRENT_WALLET_ADMIN, true);
     await tx.wait();
     tx = await SmartWalletChecker.approveWallet(OLD_APPROVAL);
-    await tx.wait();
+    await tx.wait();*/
 
     console.log("\tSuccessfull deployed contracts!");
 

@@ -8,6 +8,7 @@ import "./interfaces/ITokenVault.sol";
 import "./interfaces/IRevest.sol";
 import "./interfaces/IFNFTHandler.sol";
 import "./interfaces/ILockManager.sol";
+import "./interfaces/IRewardsHandler.sol";
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IFeeReporter.sol";
 import "./interfaces/IDistributor.sol";
@@ -27,6 +28,10 @@ import "./lib/RevestHelper.sol";
 
 interface ITokenVaultTracker {
     function tokenTrackers(address token) external view returns (IRevest.TokenTracker memory);
+}
+
+interface IWETH {
+    function deposit() external payable;
 }
 
 /**
@@ -56,15 +61,24 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     address public immutable TEMPLATE;
 
     // The file which tells our frontend how to visually represent such an FNFT
-    string public constant METADATA = "https://revest.mypinata.cloud/ipfs/Qme777honQzH1Fa5iKXALL4ZYdxJbYpXZ2YQJRUJ7Sbvf5";
+    string public METADATA = "https://revest.mypinata.cloud/ipfs/QmSdqRU7AZEXSgF6hQWE1WyagkZUYwEcMADXvkt5vLfjvk";
 
     // Constant used for approval
     uint private constant MAX_INT = 2 ** 256 - 1;
 
     uint private constant DAY = 86400;
 
+    uint private constant MAX_LOCKUP = 2 * 365 days;
+
+    // Fee tracker
+    uint private weiFee = 0.01 ether;
+
     // For tracking if a given contract has approval for token
     mapping (address => mapping (address => bool)) private approvedContracts;
+
+    // WFTM contract
+    address private constant WFTM = 0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83;
+
 
     // Initialize the contract with the needed valeus
     constructor(address _provider, address _vE, address _distro, uint N_COINS) {
@@ -107,10 +121,24 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         uint endTime,
         uint amountToLock
     ) external payable returns (uint fnftId) {    
+        require(msg.value >= weiFee, 'Insufficient fee!');
 
         // Transfer the tokens from the user to this contract
         IERC20(TOKEN).safeTransferFrom(msg.sender, address(this), amountToLock);
-
+        
+        // Pay fee: this is dependent on this contract being whitelisted to allow it to pay
+        // nothing via the typical method
+        {
+            uint wftmFee = msg.value;
+            address rewards = IAddressRegistry(addressRegistry).getRewardsHandler();
+            IWETH(WFTM).deposit{value: msg.value}();
+            if(!approvedContracts[rewards][WFTM]) {
+                IERC20(WFTM).approve(rewards, MAX_INT);
+                approvedContracts[rewards][WFTM] = true;
+            }
+            IRewardsHandler(rewards).receiveFee(WFTM, wftmFee);
+        }
+        
         {
             // Initialize the Revest config object
             IRevest.FNFTConfig memory fnftConfig;
@@ -139,7 +167,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
             address revest = IAddressRegistry(addressRegistry).getRevest();
 
             
-            fnftId = IRevest(revest).mintTimeLock{value:msg.value}(endTime, recipients, quantities, fnftConfig);
+            fnftId = IRevest(revest).mintTimeLock(endTime, recipients, quantities, fnftConfig);
         }
 
         address smartWallAdd;
@@ -205,7 +233,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
     // Callback from Revest.sol to extend maturity
     function handleTimelockExtensions(uint fnftId, uint expiration, address) external override onlyRevestController {
-        require(expiration - block.timestamp <= 2 * 365 days, 'Max lockup is 2 years');
+        require(expiration - block.timestamp <= MAX_LOCKUP, 'Max lockup is 2 years');
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
         wallet.increaseUnlockTime(expiration, VOTING_ESCROW);
@@ -261,9 +289,17 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         }
     }
 
+    function setWeiFee(uint _fee) external onlyOwner {
+        weiFee = _fee;
+    }
+
+    function setMetadata(string memory _meta) external onlyOwner {
+        METADATA = _meta;
+    }
+
     /// View Functions
 
-    function getCustomMetadata(uint) external pure override returns (string memory) {
+    function getCustomMetadata(uint) external view override returns (string memory) {
         return METADATA;
     }
 
@@ -287,7 +323,8 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
             rewardsDesc[i] = string(abi.encodePacked(par1, par2));
         }
         address smartWallet = getAddressForFNFT(fnftId);
-        displayData = abi.encode(smartWallet, rewardsDesc, hasRewards);
+        uint maxExtension = block.timestamp / (1 days) * (1 days) + MAX_LOCKUP; //Ensures no confusion with time zones and date-selectors
+        displayData = abi.encode(smartWallet, rewardsDesc, hasRewards, maxExtension, TOKEN);
     }
 
     function getAddressRegistry() external view override returns (address) {
@@ -298,8 +335,8 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         return IRevest(IAddressRegistry(addressRegistry).getRevest());
     }
 
-    function getFlatWeiFee(address) external pure override returns (uint) {
-        return 3 ether;
+    function getFlatWeiFee(address) external view override returns (uint) {
+        return weiFee;
     }
 
     function getERC20Fee(address) external pure override returns (uint) {
