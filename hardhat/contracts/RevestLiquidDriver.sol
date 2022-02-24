@@ -188,6 +188,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
             // We deposit our funds into the wallet
             wallet.createLock(amountToLock, endTime, VOTING_ESCROW);
+            emit DepositERC20OutputReceiver(msg.sender, TOKEN, amountToLock, fnftId, abi.encode(smartWallAdd));
         }
     }
 
@@ -212,6 +213,8 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
         // Clean up memory
         SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).revokeWallet(smartWallAdd);
+
+        emit WithdrawERC20OutputReceiver(owner, TOKEN, balance, fnftId, abi.encode(smartWallAdd));
     }
 
     // Not applicable, as these cannot be split

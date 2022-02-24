@@ -7,7 +7,8 @@
             "encode":"bool",
             "primitive":"alert",
             "extra_data": {
-                "block_withdrawal":true
+                "block_withdrawal":true,
+                "renderWhenIndexNotEmpty":2
             },
             "index":2
         },
@@ -43,5 +44,14 @@
             "index":4
         }
         
+    ],
+    "updates":[
+        {
+            "label":"Claim all rewards",
+            "primitive":"button",
+            "extra_data":{
+                "renderWhenIndexNotEmpty":2
+            }
+        }
     ]
 }
