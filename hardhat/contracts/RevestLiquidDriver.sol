@@ -84,6 +84,13 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     address private constant WFTM = 0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83;
 
 
+    // Control variable to let all users utilize smart wallets for proxy execution
+    bool public globalProxyEnabled;
+
+    // Control variable to enable a given FNFT to utilize their smart wallet for proxy execution
+    mapping (uint => bool) public proxyEnabled;
+
+
     // Initialize the contract with the needed valeus
     constructor(address _provider, address _vE, address _distro, uint N_COINS) {
         addressRegistry = _provider;
@@ -276,12 +283,12 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         wallet.claimRewards(DISTRIBUTOR, VOTING_ESCROW, REWARD_TOKENS, msg.sender, rewardsAdd);
     }       
 
-    /// TODO: Add a boolean value to this to disallow/allow for a user/globally
     function proxyExecute(
         uint fnftId,
         address destination,
         bytes memory data
     ) external onlyTokenHolder(fnftId) returns (bytes memory dataOut) {
+        require(globalProxyEnabled || proxyEnabled[fnftId], 'Proxy access not enabled!');
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
         dataOut = wallet.proxyExecute(destination, data);
@@ -328,6 +335,14 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         METADATA = _meta;
     }
 
+    function setGlobalProxyEnabled(bool enable) external onlyOwner {
+        globalProxyEnabled = enable;
+    }
+
+    function setProxyStatusForFNFT(uint fnftId, bool status) external onlyOwner {
+        proxyEnabled[fnftId] = status;
+    }
+
     /// View Functions
 
     function getCustomMetadata(uint) external view override returns (string memory) {
@@ -347,11 +362,13 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     function getOutputDisplayValues(uint fnftId) external view override returns (bytes memory displayData) {
         (uint[] memory rewards, bool hasRewards) = getRewardsForFNFT(fnftId);
         string[] memory rewardsDesc = new string[](REWARD_TOKENS.length);
-        for(uint i = 0; i < REWARD_TOKENS.length; i++) {
-            address token = REWARD_TOKENS[i];
-            string memory par1 = string(abi.encodePacked(RevestHelper.getName(token),": "));
-            string memory par2 = string(abi.encodePacked(RevestHelper.amountToDecimal(rewards[i], token), " [", RevestHelper.getTicker(token), "] Tokens Available"));
-            rewardsDesc[i] = string(abi.encodePacked(par1, par2));
+        if(hasRewards) {
+            for(uint i = 0; i < REWARD_TOKENS.length; i++) {
+                address token = REWARD_TOKENS[i];
+                string memory par1 = string(abi.encodePacked(RevestHelper.getName(token),": "));
+                string memory par2 = string(abi.encodePacked(RevestHelper.amountToDecimal(rewards[i], token), " [", RevestHelper.getTicker(token), "] Tokens Available"));
+                rewardsDesc[i] = string(abi.encodePacked(par1, par2));
+            }
         }
         address smartWallet = getAddressForFNFT(fnftId);
         uint maxExtension = block.timestamp / (1 days) * (1 days) + MAX_LOCKUP; //Ensures no confusion with time zones and date-selectors
