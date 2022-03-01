@@ -2,6 +2,7 @@
 
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IDistributor.sol";
+import "./interfaces/IRewardsHandler.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 
@@ -15,6 +16,10 @@ contract VestedEscrowSmartWallet {
     uint private constant MAX_INT = 2 ** 256 - 1;
 
     address private immutable MASTER;
+
+    uint private constant feeNumerator = 1;
+
+    uint private constant feeDenominator = 100;
 
     constructor() {
         MASTER = msg.sender;
@@ -59,7 +64,13 @@ contract VestedEscrowSmartWallet {
         _cleanMemory();
     }
 
-    function claimRewards(address distributor, address votingEscrow, address[] memory tokens) external onlyMaster returns (uint[] memory) {
+    function claimRewards(
+        address distributor, 
+        address votingEscrow, 
+        address[] memory tokens, 
+        address caller, 
+        address rewards
+    ) external onlyMaster {
         uint[] memory balances = new uint[](tokens.length);
         bool exitFlag;
         while(!exitFlag) {
@@ -69,10 +80,25 @@ contract VestedEscrowSmartWallet {
         for(uint i = 0; i < tokens.length; i++) {
             address token = tokens[i];
             uint bal = IERC20(token).balanceOf(address(this));
+
+            // Handle fee transfer
+            // Built-in assumption that we have approved rewards handler
+            uint fee = bal * feeNumerator / feeDenominator;
+            bal -= fee;
+            IRewardsHandler(rewards).receiveFee(token, fee);
+
+            // Handle transfer to owner
             balances[i] = bal;
-            IERC20(token).safeTransfer(MASTER, bal);
+            IERC20(token).safeTransfer(caller, bal);
         }
-        return balances;
+        _cleanMemory();
+    }
+
+    // Proxy function for ease of use and gas-savings
+    function proxyApproveAll(address[] memory tokens, address spender) external onlyMaster {
+        for(uint i = 0; i < tokens.length; i++) {
+            IERC20(tokens[i]).approve(spender, MAX_INT);
+        }
     }
 
     /// Proxy function to send arbitrary messages. Useful for delegating votes and similar activities

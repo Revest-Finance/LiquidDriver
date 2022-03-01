@@ -10,6 +10,8 @@ async function main() {
     let RevestContract;
     let SmartWalletChecker;
 
+    const REVEST = '0x0e29561C367e961A020A6d91486db28B5a48319f';
+    const revestABI = ['function modifyWhitelist(address contra, bool listed) external'];
 
     const PROVIDERS = {
         1:'0xD721A90dd7e010c8C5E022cc0100c55aC78E0FC4',
@@ -55,13 +57,17 @@ async function main() {
     
     console.log(seperator);
     console.log("\tDeploying Liquid Driver <> Revest Integration");
-
+/*
     console.log(seperator);
     console.log("\tDeploying RevestLiquidDriver");
     const RevestLiquidDriverFactory = await ethers.getContractFactory("RevestLiquidDriver");
     RevestLD = await RevestLiquidDriverFactory.deploy(PROVIDER_ADDRESS, VOTING_ESCROW, DISTRIBUTOR, N_COINS);
     await RevestLD.deployed();
     console.log("\tRevestLiquidDriver Deployed at: " + RevestLD.address);
+    */
+    RevestContract = new ethers.Contract(REVEST, revestABI, owner);
+    let tx = await RevestContract.modifyWhitelist("0x6bF8ba40f957a7478Ed46a8C2220a08244a4De08", true);
+    await tx.wait();
 
     /*
     console.log(seperator);

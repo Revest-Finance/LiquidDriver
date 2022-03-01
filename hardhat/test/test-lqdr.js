@@ -53,6 +53,7 @@ const revestABI = [
                     'function withdrawFNFT(uint tokenUID, uint quantity) external',
                     'function depositAdditionalToFNFT(uint fnftId, uint amount,uint quantity) external returns (uint)',
                     'function extendFNFTMaturity(uint fnftId,uint endTime ) external returns (uint)',
+                    'function modifyWhitelist(address contra, bool listed) external'
                 ];
 
 const HOUR = 3600;
@@ -133,6 +134,7 @@ describe("Revest", function () {
 
             RevestContract = new ethers.Contract(REVEST, revestABI, whaleSigners[1]);
 
+
             // The LQDR contract object
             rvstTokenContract = new ethers.Contract(LQDR_TOKEN, abi, owner);
 
@@ -151,6 +153,8 @@ describe("Revest", function () {
                 await approveAll(signer, feeDistro.address);
             }
             await approveAll(owner, RevestLD.address);
+            let tx = await RevestContract.connect(whaleSigners[0]).modifyWhitelist(RevestLD.address, true);
+            await tx.wait();
 
             await xLQDR.connect(whaleSigners[2]).commit_smart_wallet_checker(SmartWalletChecker.address);
             await xLQDR.connect(whaleSigners[2]).apply_smart_wallet_checker();

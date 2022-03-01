@@ -71,10 +71,14 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     uint private constant MAX_LOCKUP = 2 * 365 days;
 
     // Fee tracker
-    uint private weiFee = 0.01 ether;
+    uint private weiFee = 1 ether;
 
     // For tracking if a given contract has approval for token
     mapping (address => mapping (address => bool)) private approvedContracts;
+
+    // For tracking wallet approvals for tokens
+    // Works for up to 256 tokens
+    mapping (address => mapping (uint => uint)) private walletApprovals;
 
     // WFTM contract
     address private constant WFTM = 0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83;
@@ -258,15 +262,21 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         uint fnftId,
         bytes memory
     ) external override onlyTokenHolder(fnftId) {
+        address rewardsAdd = IAddressRegistry(addressRegistry).getRewardsHandler();
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
-        uint[] memory rewards = wallet.claimRewards(DISTRIBUTOR, VOTING_ESCROW, REWARD_TOKENS);
-        wallet.cleanMemory();
-        for(uint i = 0; i < rewards.length; i++) {
-            IERC20(REWARD_TOKENS[i]).transfer(msg.sender, rewards[i]);
+        { 
+            // Want this to be re-run if we change fee distributors or rewards handlers
+            address virtualAdd = address(uint160(uint256(keccak256(abi.encodePacked(DISTRIBUTOR, rewardsAdd)))));
+            if(!_isApproved(smartWallAdd, virtualAdd)) {
+                wallet.proxyApproveAll(REWARD_TOKENS, rewardsAdd);
+                _setIsApproved(smartWallAdd, virtualAdd, true);
+            }
         }
+        wallet.claimRewards(DISTRIBUTOR, VOTING_ESCROW, REWARD_TOKENS, msg.sender, rewardsAdd);
     }       
 
+    /// TODO: Add a boolean value to this to disallow/allow for a user/globally
     function proxyExecute(
         uint fnftId,
         address destination,
@@ -277,6 +287,24 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         dataOut = wallet.proxyExecute(destination, data);
         wallet.cleanMemory();
     }
+
+    // Utility functions
+
+    function _isApproved(address wallet, address feeDistro) internal view returns (bool) {
+        uint256 _id = uint256(uint160(feeDistro));
+        uint256 _mask = 1 << _id % 256;
+        return (walletApprovals[wallet][_id / 256] & _mask) != 0;
+    }
+
+    function _setIsApproved(address wallet, address feeDistro, bool _approval) internal {
+        uint256 _id = uint256(uint160(feeDistro));
+        if (_approval) {
+            walletApprovals[wallet][_id / 256] |= 1 << _id % 256;
+        } else {
+            walletApprovals[wallet][_id / 256] &= 0 << _id % 256;
+        }
+    }
+
 
     /// Admin Functions
 

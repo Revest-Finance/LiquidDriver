@@ -34,7 +34,7 @@ module.exports = {
         fantom: {
             url: process.env.FANTOM,
             accounts: [process.env.PRIVATE_KEY],
-            gasPrice: 1813e9,
+            gasPrice: 400e9,
             chainId: 250,
             blockGasLimit: 12487794
         },
