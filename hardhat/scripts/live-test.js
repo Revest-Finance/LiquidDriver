@@ -22,7 +22,7 @@ const abi = [
 
 async function main() {
 
-    const REVEST_LQDR = "0x54D0054dCb6d87bEeB060435C21dD18F39Ab4FD7";
+    const REVEST_LQDR = "0xb80f5a586BC247D993E6dbaCD8ADD211ec6b0cA5";
     const LQDR_TOKEN = "0x10b620b2dbAC4Faa7D7FFD71Da486f5D44cd86f9";
 
     const amountToDeposit = ethers.utils.parseEther('0.01'); // Lock very small amount

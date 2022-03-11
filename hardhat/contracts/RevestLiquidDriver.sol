@@ -61,7 +61,7 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     address public immutable TEMPLATE;
 
     // The file which tells our frontend how to visually represent such an FNFT
-    string public METADATA = "https://revest.mypinata.cloud/ipfs/QmSdqRU7AZEXSgF6hQWE1WyagkZUYwEcMADXvkt5vLfjvk";
+    string public METADATA = "https://revest.mypinata.cloud/ipfs/Qmcy4NZmfefKAJ81w9ahwBWp3tX6f8B6i7r9xEzV4RbrdE";
 
     // Constant used for approval
     uint private constant MAX_INT = 2 ** 256 - 1;
@@ -403,6 +403,8 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
         address smartWallAdd = getAddressForFNFT(fnftId);
         
         uint lastTokenTime = distro.last_token_times(0);
+        lastTokenTime = lastTokenTime / DAY * DAY;
+
         rewards = new uint[](REWARD_TOKENS.length);
         uint maxUserEpoch = voting.user_point_epoch(smartWallAdd);
         uint startTime = distro.start_time();

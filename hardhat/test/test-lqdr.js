@@ -218,6 +218,11 @@ describe("Revest", function () {
 
         await RevestLD.connect(whaleSigners[1]).triggerOutputReceiverUpdate(fnftId, bytes);
 
+        currentState = await RevestLD.getOutputDisplayValues(fnftId);
+        abiCoder = ethers.utils.defaultAbiCoder;
+        state = abiCoder.decode(['address', 'string[]'],currentState);
+        console.log(state);
+
         let newBalLQDR = await rvstTokenContract.balanceOf(whales[1]);
         let newWFTM = await wftm.balanceOf(whales[1]);
 
