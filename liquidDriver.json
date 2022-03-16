@@ -42,6 +42,14 @@
             "encode":"address",
             "primitive":"approveAssetForOutputReceiver",
             "index":4
+        },
+        {
+            "label":"LQDR Balance",
+            "primitive":"script_integer",
+            "extra_data":{
+                "baseURL":"https://lambda.revest.finance/api/getLQDRUnderlying/",
+                "concatWithIndices":[0]
+            }
         }
         
     ],
