@@ -33,8 +33,6 @@ contract VestedEscrowSmartWallet {
     function createLock(uint value, uint unlockTime, address votingEscrow) external onlyMaster {
         // Only callable from the parent contract, transfer tokens from user -> parent, parent -> VE
         address token = IVotingEscrow(votingEscrow).token();
-        // Pull value into this contract
-        IERC20(token).safeTransferFrom(MASTER, address(this), value);
         // Single-use approval system
         if(IERC20(token).allowance(address(this), votingEscrow) != MAX_INT) {
             IERC20(token).approve(votingEscrow, MAX_INT);
@@ -45,8 +43,6 @@ contract VestedEscrowSmartWallet {
     }
 
     function increaseAmount(uint value, address votingEscrow) external onlyMaster {
-        address token = IVotingEscrow(votingEscrow).token();
-        IERC20(token).safeTransferFrom(MASTER, address(this), value);
         IVotingEscrow(votingEscrow).increase_amount(value);
         _cleanMemory();
     }
