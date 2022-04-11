@@ -134,9 +134,6 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
     ) external payable returns (uint fnftId) {    
         require(msg.value >= weiFee, 'Insufficient fee!');
 
-        // Transfer the tokens from the user to this contract
-        IERC20(TOKEN).safeTransferFrom(msg.sender, address(this), amountToLock);
-        
         // Pay fee: this is dependent on this contract being whitelisted to allow it to pay
         // nothing via the typical method
         {
@@ -149,14 +146,11 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
             }
             IRewardsHandler(rewards).receiveFee(WFTM, wftmFee);
         }
-        
+
+        /// Mint FNFT
         {
             // Initialize the Revest config object
             IRevest.FNFTConfig memory fnftConfig;
-
-            // Use address zero because we're using TokenVault as placeholder storage
-            // Use a real amount so our system shows that LQDR is locked
-            fnftConfig.depositAmount = amountToLock;
 
             // Want FNFT to be extendable and support multiple deposits
             fnftConfig.isMulti = true;
@@ -187,15 +181,11 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
             smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
             VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
 
+            // Transfer the tokens from the user to the smart wallet
+            IERC20(TOKEN).safeTransferFrom(msg.sender, smartWallAdd, amountToLock);
+
             // We use our admin powers on SmartWalletWhitelistV2 to approve the newly created smart wallet
             SmartWalletWhitelistV2(IVotingEscrow(VOTING_ESCROW).smart_wallet_checker()).approveWallet(smartWallAdd);
-            
-            // Here, check if the smart wallet has approval to spend tokens out of this entry point contract
-            if(!approvedContracts[smartWallAdd][TOKEN]) {
-                // If it doesn't, approve it
-                IERC20(TOKEN).approve(smartWallAdd, MAX_INT);
-                approvedContracts[smartWallAdd][TOKEN] = true;
-            }
 
             // We deposit our funds into the wallet
             wallet.createLock(amountToLock, endTime, VOTING_ESCROW);
@@ -255,9 +245,9 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
     /// Prerequisite: User has approved this contract to spend tokens on their behalf
     function handleAdditionalDeposit(uint fnftId, uint amountToDeposit, uint, address caller) external override onlyRevestController {
-        IERC20(TOKEN).safeTransferFrom(caller, address(this), amountToDeposit);
         address smartWallAdd = Clones.cloneDeterministic(TEMPLATE, keccak256(abi.encode(TOKEN, fnftId)));
         VestedEscrowSmartWallet wallet = VestedEscrowSmartWallet(smartWallAdd);
+        IERC20(TOKEN).safeTransferFrom(caller, smartWallAdd, amountToDeposit);
         wallet.increaseAmount(amountToDeposit, VOTING_ESCROW);
     }
 
@@ -341,6 +331,18 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
 
     function setProxyStatusForFNFT(uint fnftId, bool status) external onlyOwner {
         proxyEnabled[fnftId] = status;
+    }
+
+    /// If funds are mistakenly sent to smart wallets, this will allow the owner to assist in rescue
+    function rescueNativeFunds() external onlyOwner {
+        payable(msg.sender).transfer(address(this).balance);
+    }
+
+    /// Under no circumstances should this contract ever contain ERC-20 tokens at the end of a transaction
+    /// If it does, someone has mistakenly sent funds to the contract, and this function can rescue their tokens
+    function rescueERC20(address token) external onlyOwner {
+        uint amount = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(msg.sender, amount);
     }
 
     /// View Functions
