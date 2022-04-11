@@ -147,14 +147,10 @@ contract RevestLiquidDriver is IOutputReceiverV3, Ownable, ERC165, IFeeReporter 
             IRewardsHandler(rewards).receiveFee(WFTM, wftmFee);
         }
 
-        /// Naive minting of FNFT – no value storage means no risk
+        /// Mint FNFT
         {
             // Initialize the Revest config object
             IRevest.FNFTConfig memory fnftConfig;
-
-            // Use address zero because we're using TokenVault as placeholder storage
-            // Use a real amount so our system shows that LQDR is locked
-            fnftConfig.depositAmount = amountToLock;
 
             // Want FNFT to be extendable and support multiple deposits
             fnftConfig.isMulti = true;
